@@ -1,0 +1,24 @@
+# Source (ship compiled only)
+src/
+tsconfig.json
+
+# Dev files
+.github/
+openclaw-source/
+coverage/
+.nyc_output/
+
+# Docs (keep README + LICENSE)
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+BEFEHLE.md
+SKILLS-PLAN.md
+analyse.md
+aufgabe.md
+prompts.md
+
+# Misc
+.gitignore
+.env*
+*.log

@@ -1,0 +1,54 @@
+{
+  "name": "cashclaw",
+  "version": "0.1.0",
+  "description": "Autonomous money-making AI agent built on OpenClaw",
+  "type": "module",
+  "bin": {
+    "cashclaw": "dist/cli/index.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli/index.js",
+    "onboard": "node dist/cli/index.js onboard",
+    "gateway": "node dist/cli/index.js gateway",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc && node --test dist/core.test.js",
+    "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.9.1",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "stripe": "^17.5.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.12.0",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/derprofi1313/cash-claw.git"
+  },
+  "homepage": "https://github.com/derprofi1313/cash-claw#readme",
+  "bugs": {
+    "url": "https://github.com/derprofi1313/cash-claw/issues"
+  },
+  "author": "Jannik <jannik@cashclaw.dev>",
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "agent",
+    "autonomous",
+    "openclaw",
+    "cashclaw",
+    "revenue",
+    "monetization",
+    "telegram"
+  ]
+}
