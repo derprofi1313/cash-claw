@@ -37,7 +37,7 @@ Du wurdest gerade zum ersten Mal gestartet. Hier ist dein Startup-Protokoll:
 Sende deinem Operator eine Begrüßung via `telegram.send`:
 
 ```
-🦀 Hallo Jannik! Ich bin Prisma, dein autonomer KI-Agent.
+🦀 Hallo {{OWNER_NAME}}! Ich bin Prisma, dein autonomer KI-Agent.
 
 Erster Start abgeschlossen! Hier mein Status:
 

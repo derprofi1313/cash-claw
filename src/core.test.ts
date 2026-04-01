@@ -19,6 +19,7 @@ import {
   ErrorCodes,
 } from "./gateway/protocol/types.js";
 import { z } from "zod";
+import { encryptConfig, decryptConfig } from "./config/ConfigEncryption.js";
 
 // ═══════════════════════════════════════════════════════════════
 //  buildTool()
@@ -552,5 +553,40 @@ describe("Protocol v1 helpers", () => {
 
   it("should have correct protocol version", () => {
     assert.equal(PROTOCOL_VERSION, 1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  ConfigEncryption
+// ═══════════════════════════════════════════════════════════════
+
+describe("ConfigEncryption", () => {
+  it("should encrypt and decrypt config", () => {
+    const plaintext = JSON.stringify({ llm: { provider: "anthropic" }, secret: "test-key-123" });
+    const password = "my-secure-password";
+    const encrypted = encryptConfig(plaintext, password);
+    const decrypted = decryptConfig(encrypted, password);
+    assert.equal(decrypted, plaintext);
+  });
+
+  it("should fail with wrong password", () => {
+    const plaintext = '{"test": true}';
+    const encrypted = encryptConfig(plaintext, "correct-password");
+    assert.throws(() => {
+      decryptConfig(encrypted, "wrong-password");
+    });
+  });
+
+  it("should produce different ciphertext each time (random salt/IV)", () => {
+    const plaintext = '{"key": "value"}';
+    const a = encryptConfig(plaintext, "pass");
+    const b = encryptConfig(plaintext, "pass");
+    assert.notEqual(a, b);
+  });
+
+  it("should contain magic bytes", () => {
+    const encrypted = encryptConfig("{}", "pass");
+    const parsed = JSON.parse(encrypted);
+    assert.equal(parsed.magic, "CCENC1");
   });
 });

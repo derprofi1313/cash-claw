@@ -12,10 +12,10 @@
 - **Kosten**: ~$0.005-0.02 pro Call je nach Länge
 - **Hinweis**: Jeder Call kostet Geld. Plane effizient. Fasse ähnliche Aufgaben zusammen.
 
-### 📱 Telegram Bot (@prisma25bot)
+### 📱 Telegram Bot
 - **Funktion**: `telegram.send`, `telegram.sendButtons`, `telegram.sendFile`
 - **Kann**: Nachrichten senden/empfangen, Inline-Buttons, Dateien/Bilder senden
-- **Operator Chat-ID**: 7670468511
+- **Operator Chat-ID**: {{TELEGRAM_CHAT_ID}}
 - **Befehle empfangen**: /status, /pause, /resume, /plan, /log, /stop, /help
 - **Hinweis**: Nutze für Status-Reports, Operator-Befehle und Kunden-Kommunikation.
 

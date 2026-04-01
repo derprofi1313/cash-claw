@@ -53,6 +53,7 @@ cashclaw gateway --debug      # Debug-Modus
 
 | Methode | Pfad | Beschreibung |
 |---------|------|-------------|
+| GET | `/` | **Web-Dashboard** (Live-Ansicht mit WebSocket) |
 | GET | `/health` | Healthcheck (Status + Uptime) |
 | GET | `/api/state` | Aktueller Agent-Status |
 | GET | `/api/costs` | Kostenübersicht (Session + Tagesbudget) |
@@ -60,6 +61,10 @@ cashclaw gateway --debug      # Debug-Modus
 | GET | `/api/skills` | Monetarisierungs-Skills (8x) |
 | GET | `/api/session` | Aktuelle Session-Info |
 | POST | `/api/control` | Steuerung: `{"action": "pause\|resume\|cycle\|stop\|reflect"}` |
+| POST | `/api/chat` | Chat mit Agent: `{"message": "..."}` |
+| GET | `/api/export/costs?format=json\|csv` | Kosten exportieren |
+| GET | `/api/export/tasks?format=json\|csv` | Tasks exportieren |
+| POST | `/webhook/stripe` | Stripe Webhook (Signatur-Verifizierung) |
 | WS | `/ws` | WebSocket für Echtzeit-Events |
 
 ---
@@ -80,6 +85,31 @@ Standalone Debug-Konsole (empfängt Events via stdin).
 
 ```bash
 cashclaw debug-console
+```
+
+---
+
+### `cashclaw encrypt`
+
+Config mit AES-256-GCM verschlüsseln.
+
+```bash
+cashclaw encrypt --password "mein-passwort"
+```
+
+Danach Gateway starten mit:
+```bash
+CASHCLAW_CONFIG_PASSWORD="mein-passwort" cashclaw gateway
+```
+
+---
+
+### `cashclaw decrypt`
+
+Verschlüsselte Config entschlüsseln.
+
+```bash
+cashclaw decrypt --password "mein-passwort"
 ```
 
 ---

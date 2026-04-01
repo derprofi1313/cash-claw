@@ -5,6 +5,7 @@ import { Command } from "commander";
 import { runOnboardWizard } from "./onboard.js";
 import { runStandaloneDebugConsole } from "./DebugConsole.js";
 import { GatewayServer } from "../gateway/GatewayServer.js";
+import { encryptConfigFile, isEncryptedConfig, decryptConfigFile } from "../config/ConfigEncryption.js";
 
 const program = new Command();
 
@@ -69,6 +70,56 @@ program
     console.log(`  Config:     ${configPath}`);
     console.log(`  Erstellt:   ${config.createdAt ?? "–"}`);
     console.log(`  Aktualisiert: ${config.updatedAt ?? "–"}`);
+  });
+
+program
+  .command("encrypt")
+  .description("Config-Datei mit AES-256-GCM verschlüsseln")
+  .requiredOption("--password <password>", "Verschlüsselungs-Passwort")
+  .action(async (opts: { password: string }) => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const os = await import("node:os");
+    const configPath = path.join(os.homedir(), ".cashclaw", "config.json");
+
+    if (!fs.existsSync(configPath)) {
+      console.log("❌ Keine Config gefunden. Führe zuerst 'cashclaw onboard' aus.");
+      return;
+    }
+    if (isEncryptedConfig(configPath)) {
+      console.log("ℹ️  Config ist bereits verschlüsselt.");
+      return;
+    }
+    encryptConfigFile(configPath, opts.password);
+    console.log("🔒 Config verschlüsselt (AES-256-GCM).");
+    console.log("   Starte den Gateway mit: CASHCLAW_CONFIG_PASSWORD=... cashclaw gateway");
+  });
+
+program
+  .command("decrypt")
+  .description("Verschlüsselte Config-Datei entschlüsseln")
+  .requiredOption("--password <password>", "Entschlüsselungs-Passwort")
+  .action(async (opts: { password: string }) => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const os = await import("node:os");
+    const configPath = path.join(os.homedir(), ".cashclaw", "config.json");
+
+    if (!fs.existsSync(configPath)) {
+      console.log("❌ Keine Config gefunden.");
+      return;
+    }
+    if (!isEncryptedConfig(configPath)) {
+      console.log("ℹ️  Config ist nicht verschlüsselt.");
+      return;
+    }
+    try {
+      const plaintext = decryptConfigFile(configPath, opts.password);
+      fs.writeFileSync(configPath, plaintext, "utf-8");
+      console.log("🔓 Config entschlüsselt.");
+    } catch {
+      console.log("❌ Falsches Passwort oder beschädigte Datei.");
+    }
   });
 
 program.parse();

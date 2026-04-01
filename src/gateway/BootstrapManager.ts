@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { GatewayLogger } from "./GatewayLogger.js";
+import type { CashClawConfig } from "../config/types.js";
 
 export interface BootstrapFiles {
   identity: string;
@@ -39,7 +40,7 @@ export class BootstrapManager {
   }
 
   /** Initialize: copy bootstrap files from project if not present, then load */
-  init(projectBootstrapDir?: string): void {
+  init(projectBootstrapDir?: string, config?: CashClawConfig): void {
     // Ensure bootstrap dir exists
     if (!fs.existsSync(this.bootstrapDir)) {
       fs.mkdirSync(this.bootstrapDir, { recursive: true });
@@ -57,6 +58,11 @@ export class BootstrapManager {
           fs.copyFileSync(src, dst);
         }
         this.log.ok(`${sourceFiles.length} Bootstrap-Dateien kopiert`);
+
+        // Replace template variables with config values
+        if (config) {
+          this.personalizeBootstrap(config);
+        }
       }
     }
 
@@ -156,6 +162,46 @@ export class BootstrapManager {
   /** Get state */
   getState(): BootstrapState {
     return { ...this.state };
+  }
+
+  /** Replace {{PLACEHOLDER}} variables in all bootstrap files with config values */
+  private personalizeBootstrap(config: CashClawConfig): void {
+    const vars: Record<string, string> = {
+      OWNER_NAME: config.agent?.owner ?? "Operator",
+      OWNER_EMAIL: config.agent?.email ?? "",
+      OWNER_LOCATION: "Nicht angegeben",
+      OWNER_TIMEZONE: "Europe/Berlin",
+      OWNER_CURRENCY: config.agent?.currency ?? "EUR",
+      DAILY_BUDGET: String(config.financeLimits?.dailyApiBudgetUsd ?? 5),
+      TELEGRAM_CHAT_ID: config.platform?.telegram?.operatorChatId ?? "",
+      AGENT_NAME: config.agent?.name ?? "Cash-Claw",
+    };
+
+    const mdFiles = fs.readdirSync(this.bootstrapDir).filter(f => f.endsWith(".md"));
+    let replacements = 0;
+
+    for (const file of mdFiles) {
+      const filePath = path.join(this.bootstrapDir, file);
+      let content = fs.readFileSync(filePath, "utf-8");
+      let changed = false;
+
+      for (const [key, value] of Object.entries(vars)) {
+        const placeholder = `{{${key}}}`;
+        if (content.includes(placeholder)) {
+          content = content.replaceAll(placeholder, value);
+          changed = true;
+          replacements++;
+        }
+      }
+
+      if (changed) {
+        fs.writeFileSync(filePath, content, "utf-8");
+      }
+    }
+
+    if (replacements > 0) {
+      this.log.ok(`Auto-Bootstrap: ${replacements} Platzhalter mit Config-Werten ersetzt`);
+    }
   }
 
   // ── Private ──────────────────────────────────────────────────

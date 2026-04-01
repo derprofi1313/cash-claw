@@ -28,6 +28,7 @@ import {
   type ConnectResult,
   type GatewayEvent,
 } from "./protocol/types.js";
+import { getDashboardHtml } from "./dashboard.js";
 
 // ═══════════════════════════════════════════════════════════════
 //  WEBSOCKET (minimal implementation – no external dependency)
@@ -145,6 +146,7 @@ export class HttpGateway {
     private registry: ToolRegistry,
     private skills: MonetizationSkills | null,
     private reflection: DailyReflection | null = null,
+    private stripeWebhookSecret: string | null = null,
   ) {
     this.authToken = process.env["CASHCLAW_GATEWAY_TOKEN"] ?? null;
   }
@@ -499,7 +501,7 @@ export class HttpGateway {
 
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
     // CORS headers
-    res.setHeader("Access-Control-Allow-Origin", "http://127.0.0.1");
+    res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
@@ -509,17 +511,28 @@ export class HttpGateway {
       return;
     }
 
-    // Auth check for REST endpoints
-    if (this.authToken && !this.checkRestAuth(req)) {
+    const url = new URL(req.url ?? "/", `http://127.0.0.1:${this.port}`);
+
+    // Stripe webhook does NOT require auth (uses own signature verification)
+    if (url.pathname === "/webhook/stripe" && req.method === "POST") {
+      this.handleStripeWebhook(req, res);
+      return;
+    }
+
+    // Auth check for REST endpoints (except dashboard)
+    if (url.pathname !== "/" && this.authToken && !this.checkRestAuth(req)) {
       this.respondJson(res, 401, { error: "Unauthorized" });
       return;
     }
 
-    const url = new URL(req.url ?? "/", `http://127.0.0.1:${this.port}`);
-
     try {
       switch (url.pathname) {
         case "/":
+          // Serve dashboard HTML
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(getDashboardHtml(this.port, this.authToken));
+          break;
+
         case "/health":
           this.respondJson(res, 200, {
             status: "ok",
@@ -585,6 +598,26 @@ export class HttpGateway {
           this.handleRestControl(req, res);
           return;
 
+        case "/api/chat":
+          if (req.method !== "POST") {
+            this.respondJson(res, 405, { error: "POST required" });
+            break;
+          }
+          this.handleRestChat(req, res);
+          return;
+
+        case "/api/export/costs": {
+          const fmt = url.searchParams.get("format") ?? "json";
+          this.handleExportCosts(res, fmt);
+          break;
+        }
+
+        case "/api/export/tasks": {
+          const fmt = url.searchParams.get("format") ?? "json";
+          this.handleExportTasks(res, fmt);
+          break;
+        }
+
         default:
           this.respondJson(res, 404, { error: "Not found" });
       }
@@ -610,6 +643,144 @@ export class HttpGateway {
         this.respondJson(res, 400, { error: "Invalid JSON in request body" });
       }
     });
+  }
+
+  // ─── Chat Handler ────────────────────────────────────────────
+
+  private handleRestChat(req: http.IncomingMessage, res: http.ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+    req.on("end", () => {
+      try {
+        const { message } = JSON.parse(body) as { message: string };
+        if (!message || typeof message !== "string") {
+          this.respondJson(res, 400, { error: "Missing 'message' field" });
+          return;
+        }
+        this.runtime.handleOperatorMessage(message).then(reply => {
+          this.respondJson(res, 200, { reply });
+        }).catch(err => {
+          this.respondJson(res, 500, { error: err instanceof Error ? err.message : "Chat failed" });
+        });
+      } catch {
+        this.respondJson(res, 400, { error: "Invalid JSON in request body" });
+      }
+    });
+  }
+
+  // ─── Stripe Webhook Handler ─────────────────────────────────
+
+  private handleStripeWebhook(req: http.IncomingMessage, res: http.ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+    req.on("end", () => {
+      try {
+        // Verify Stripe signature if webhook secret is configured
+        const webhookSecret = this.stripeWebhookSecret;
+        if (webhookSecret) {
+          const sigHeader = req.headers["stripe-signature"] as string | undefined;
+          if (!sigHeader) {
+            this.respondJson(res, 400, { error: "Missing stripe-signature header" });
+            return;
+          }
+          // Stripe signature verification (v1 scheme)
+          const parts = sigHeader.split(",").reduce((acc, part) => {
+            const [k, v] = part.split("=");
+            if (k === "t") acc.timestamp = v;
+            if (k === "v1") acc.signatures.push(v);
+            return acc;
+          }, { timestamp: "", signatures: [] as string[] });
+
+          const signedPayload = `${parts.timestamp}.${body}`;
+          const expectedSig = crypto.createHmac("sha256", webhookSecret)
+            .update(signedPayload)
+            .digest("hex");
+
+          const valid = parts.signatures.some(sig =>
+            crypto.timingSafeEqual(Buffer.from(sig, "hex"), Buffer.from(expectedSig, "hex")),
+          );
+
+          if (!valid) {
+            this.respondJson(res, 400, { error: "Invalid signature" });
+            return;
+          }
+
+          // Reject events older than 5 minutes
+          const tsAge = Math.abs(Date.now() / 1000 - Number(parts.timestamp));
+          if (tsAge > 300) {
+            this.respondJson(res, 400, { error: "Timestamp too old" });
+            return;
+          }
+        }
+
+        const event = JSON.parse(body) as { type: string; data?: { object?: { amount?: number; currency?: string; status?: string } } };
+        this.log.gateway(`Stripe webhook: ${event.type}`);
+
+        // Track revenue from successful payments
+        if (event.type === "checkout.session.completed" || event.type === "payment_intent.succeeded") {
+          const amount = event.data?.object?.amount;
+          if (amount && typeof amount === "number") {
+            const amountDecimal = amount / 100; // Stripe amounts are in cents
+            this.log.ok(`💰 Stripe Zahlung eingegangen: ${amountDecimal} ${event.data?.object?.currency ?? "eur"}`);
+            this.broadcast("cost_update", { stripePayment: amountDecimal, currency: event.data?.object?.currency });
+          }
+        }
+
+        this.respondJson(res, 200, { received: true });
+      } catch {
+        this.respondJson(res, 400, { error: "Invalid JSON" });
+      }
+    });
+  }
+
+  // ─── Export Handlers ────────────────────────────────────────
+
+  private handleExportCosts(res: http.ServerResponse, format: string): void {
+    const data = {
+      session: this.costTracker.getSessionSummary(),
+      todayCost: this.costTracker.getTodayCost(),
+      remaining: this.costTracker.getRemainingBudget(),
+      models: this.costTracker.getModelBreakdown(),
+      tools: this.costTracker.getToolBreakdown(),
+    };
+
+    if (format === "csv") {
+      const rows = [["model", "calls", "inputTokens", "outputTokens", "costUsd", "errors"].join(",")];
+      for (const [model, usage] of Object.entries(data.models)) {
+        rows.push([model, usage.calls, usage.inputTokens, usage.outputTokens, usage.costUsd.toFixed(6), usage.errors].join(","));
+      }
+      res.writeHead(200, {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": "attachment; filename=costs.csv",
+      });
+      res.end(rows.join("\n"));
+    } else {
+      this.respondJson(res, 200, data);
+    }
+  }
+
+  private handleExportTasks(res: http.ServerResponse, format: string): void {
+    const state = this.runtime.getState();
+    const tasks = state.tasksCompleted ?? [];
+
+    if (format === "csv") {
+      const rows = [["title", "taskId", "success", "durationMs"].join(",")];
+      for (const t of tasks) {
+        rows.push([
+          `"${(t.title ?? "").replace(/"/g, '""')}"`,
+          String(t.taskId ?? ""),
+          t.success ? "true" : "false",
+          String(t.durationMs ?? ""),
+        ].join(","));
+      }
+      res.writeHead(200, {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": "attachment; filename=tasks.csv",
+      });
+      res.end(rows.join("\n"));
+    } else {
+      this.respondJson(res, 200, { tasks });
+    }
   }
 
   // ─── Auth ───────────────────────────────────────────────────

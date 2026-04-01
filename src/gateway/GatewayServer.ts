@@ -73,7 +73,8 @@ export class GatewayServer {
 
     // â”€â”€ 2. Load config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     this.log.gateway("Lade Konfiguration...");
-    this.bridge.load();
+    const configPassword = process.env["CASHCLAW_CONFIG_PASSWORD"] ?? undefined;
+    this.bridge.load(configPassword);
     const config = this.bridge.getConfig();
 
     if (!config.setupComplete) {
@@ -181,7 +182,7 @@ export class GatewayServer {
       "..",
       "bootstrap",
     );
-    this.bootstrap.init(projectBootstrapDir);
+    this.bootstrap.init(projectBootstrapDir, config);
 
     // â”€â”€ 10. Initialize Tool Registry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     this.registry = new ToolRegistry(this.log);
@@ -248,7 +249,7 @@ export class GatewayServer {
     this.httpGateway = new HttpGateway(
       this.opts.port, this.log, this.runtime,
       this.costTracker, this.session, this.registry, this.skills,
-      this.reflection,
+      this.reflection, config.stripe?.webhookSecret ?? null,
     );
     this.httpGateway.start();
 

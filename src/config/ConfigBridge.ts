@@ -7,6 +7,7 @@ import os from "node:os";
 import { EventEmitter } from "node:events";
 import type { CashClawConfig } from "./types.js";
 import { createDefaultConfig } from "./types.js";
+import { isEncryptedConfig, decryptConfig, encryptConfig } from "./ConfigEncryption.js";
 
 export interface ConfigEvent {
   category: "CONFIG" | "VALIDATE" | "API" | "BACKEND" | "ERROR" | "OK";
@@ -18,6 +19,7 @@ export class ConfigBridge extends EventEmitter {
   private config: CashClawConfig;
   private configDir: string;
   private configPath: string;
+  private encryptionPassword: string | null = null;
 
   constructor() {
     super();
@@ -39,13 +41,29 @@ export class ConfigBridge extends EventEmitter {
     }
   }
 
-  /** Load existing config from disk */
-  load(): CashClawConfig {
+  /** Load existing config from disk (supports encrypted configs) */
+  load(password?: string): CashClawConfig {
     this.ensureConfigDir();
     if (fs.existsSync(this.configPath)) {
       const raw = fs.readFileSync(this.configPath, "utf-8");
-      this.config = JSON.parse(raw) as CashClawConfig;
-      this.emit_debug("CONFIG", `Loaded config from ${this.configPath}`);
+
+      if (isEncryptedConfig(this.configPath)) {
+        if (!password) {
+          throw new Error("Config is encrypted. Provide password via --password or CASHCLAW_CONFIG_PASSWORD env var.");
+        }
+        this.encryptionPassword = password;
+        const decrypted = decryptConfig(raw, password);
+        this.config = JSON.parse(decrypted) as CashClawConfig;
+        this.emit_debug("CONFIG", `Loaded encrypted config from ${this.configPath}`);
+      } else {
+        this.config = JSON.parse(raw) as CashClawConfig;
+        this.emit_debug("CONFIG", `Loaded config from ${this.configPath}`);
+      }
+
+      // Store password for future saves if provided
+      if (password && !this.encryptionPassword) {
+        this.encryptionPassword = password;
+      }
     } else {
       this.config = createDefaultConfig();
       this.emit_debug("CONFIG", "No existing config found, using defaults");
@@ -53,12 +71,39 @@ export class ConfigBridge extends EventEmitter {
     return this.config;
   }
 
-  /** Write the full config to disk */
+  /** Write the full config to disk (encrypts if password is set) */
   save(): void {
     this.ensureConfigDir();
     this.config.updatedAt = new Date().toISOString();
-    fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2), "utf-8");
-    this.emit_debug("CONFIG", `Saved config to ${this.configPath}`);
+    const json = JSON.stringify(this.config, null, 2);
+
+    if (this.encryptionPassword) {
+      const encrypted = encryptConfig(json, this.encryptionPassword);
+      fs.writeFileSync(this.configPath, encrypted, "utf-8");
+      this.emit_debug("CONFIG", `Saved encrypted config to ${this.configPath}`);
+    } else {
+      fs.writeFileSync(this.configPath, json, "utf-8");
+      this.emit_debug("CONFIG", `Saved config to ${this.configPath}`);
+    }
+  }
+
+  /** Enable encryption for future saves */
+  enableEncryption(password: string): void {
+    this.encryptionPassword = password;
+    this.save();
+    this.emit_debug("CONFIG", "Config encryption enabled (AES-256-GCM)");
+  }
+
+  /** Disable encryption (save as plaintext) */
+  disableEncryption(): void {
+    this.encryptionPassword = null;
+    this.save();
+    this.emit_debug("CONFIG", "Config encryption disabled");
+  }
+
+  /** Check if config is currently encrypted */
+  isEncrypted(): boolean {
+    return isEncryptedConfig(this.configPath);
   }
 
   /** Update a single top-level section and save immediately */

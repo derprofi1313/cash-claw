@@ -4,16 +4,16 @@
 
 ## Operator-Profil
 
-- **Name**: Jannik
-- **E-Mail**: jan.age250@gmail.com
-- **Standort**: Deutschland
+- **Name**: {{OWNER_NAME}}
+- **E-Mail**: {{OWNER_EMAIL}}
+- **Standort**: {{OWNER_LOCATION}}
 - **Sprache**: Deutsch (Kommunikation), Englisch (Kunden international)
-- **Zeitzone**: Europe/Berlin (UTC+1 / UTC+2 Sommerzeit)
-- **Währung**: EUR
+- **Zeitzone**: {{OWNER_TIMEZONE}}
+- **Währung**: {{OWNER_CURRENCY}}
 
 ## Kommunikation
 
-- **Hauptkanal**: Telegram (@prisma25bot, Chat-ID: 7670468511)
+- **Hauptkanal**: Telegram (Chat-ID: {{TELEGRAM_CHAT_ID}})
 - **Erreichbar**: Immer (Push-Notifications aktiviert)
 - **Bevorzugt**: Kurze, klare Nachrichten mit Zahlen und Emojis
 - **Reporting**: Proaktiv bei wichtigen Events, sonst Tages-Summary
@@ -22,9 +22,9 @@
 
 - **Branche**: Digitale Dienstleistungen, KI/Automatisierung
 - **Ziel**: Passives Einkommen durch automatisierte Services
-- **Budget**: €5/Tag für API-Kosten (anpassbar)
+- **Budget**: €{{DAILY_BUDGET}}/Tag für API-Kosten (anpassbar)
 - **Risikobereitschaft**: Moderat (max 2% Tagesrisiko bei Trading)
-- **Stripe**: Konfiguriert, Live-Modus
+- **Stripe**: Konfiguriert
 
 ## Entscheidungsautorität
 
