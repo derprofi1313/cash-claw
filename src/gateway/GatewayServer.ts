@@ -264,7 +264,7 @@ export class GatewayServer {
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
 
-    this.log.ok(`\nðŸ¦€ Cash-Claw Gateway lÃ¤uft (Port ${this.opts.port})`);
+    this.log.ok(`\nðŸ¦€ Cash-Claw Gateway gestartet`);
     this.log.ok(`   Agent: ${agentName} | LLM: ${config.llm.provider}/${config.llm.model}`);
     const features = [
       this.gog?.enabled ? "Gog" : null,
@@ -277,7 +277,20 @@ export class GatewayServer {
       `${this.skills.getSkills().length} Skills`,
     ].filter(Boolean).join(", ");
     this.log.ok(`   Features: ${features}`);
+    this.log.ok(`   Dashboard: http://127.0.0.1:${this.opts.port}/`);
     this.log.ok(`   DrÃ¼cke Ctrl+C zum Beenden\n`);
+
+    // Always print startup banner to console (even without --debug)
+    const GREEN = "\x1b[32m";
+    const CYAN = "\x1b[36m";
+    const RESET = "\x1b[0m";
+    console.log("");
+    console.log(`${GREEN}🦀 Cash-Claw Gateway gestartet${RESET}`);
+    console.log(`   Agent: ${agentName} | LLM: ${config.llm.provider}/${config.llm.model}`);
+    console.log(`   Features: ${features}`);
+    console.log(`   ${CYAN}Dashboard: http://127.0.0.1:${this.opts.port}/${RESET}`);
+    console.log(`   Drücke Ctrl+C zum Beenden`);
+    console.log("");
   }
 
   async stop(): Promise<void> {
