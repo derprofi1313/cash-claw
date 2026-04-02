@@ -116,12 +116,15 @@ export type GatewayEvent =
   | "task_complete"
   | "task_error"
   | "planning"
+  | "plan_complete"
+  | "review_complete"
   | "tool_call"
   | "tool_result"
   | "cost_update"
   | "agent_state"
   | "learning"
-  | "error";
+  | "error"
+  | string; // allow custom event names from runtime
 
 // ═══════════════════════════════════════════════════════════════
 //  ERROR CODES

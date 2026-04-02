@@ -290,6 +290,14 @@ export class GatewayServer {
     );
     this.httpGateway.setDashboardData(dashboardData);
 
+    // Pipe GatewayLogger events into the live log buffer so /api/logs works
+    this.bridge.on("debug", (entry: { category: string; message: string }) => {
+      const level = entry.category === "ERROR" ? "error"
+        : entry.category === "EXEC" ? "tool_call"
+        : "info";
+      dashboardData.addLog(level as "info" | "warn" | "error" | "tool_call", `[${entry.category}] ${entry.message}`);
+    });
+
     // Wire runtime events to WebSocket broadcast
     this.runtime.onEvent((event) => {
       const { type, ...payload } = event;

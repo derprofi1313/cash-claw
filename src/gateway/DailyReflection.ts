@@ -74,6 +74,33 @@ export class DailyReflection {
     return this.performReflection();
   }
 
+  /** Load the most recent N reflection results from disk */
+  getRecentReflections(n = 7): ReflectionResult[] {
+    const dir = path.join(this.configDir, "reflections");
+    if (!fs.existsSync(dir)) return [];
+
+    try {
+      const files = fs.readdirSync(dir)
+        .filter(f => f.endsWith(".json"))
+        .sort()
+        .reverse()
+        .slice(0, n);
+
+      const results: ReflectionResult[] = [];
+      for (const file of files) {
+        try {
+          const content = fs.readFileSync(path.join(dir, file), "utf-8");
+          results.push(JSON.parse(content) as ReflectionResult);
+        } catch {
+          // skip corrupt files
+        }
+      }
+      return results;
+    } catch {
+      return [];
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════
   //  MAIN REFLECTION
   // ═══════════════════════════════════════════════════════════════

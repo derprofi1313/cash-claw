@@ -650,7 +650,11 @@ export class HttpGateway {
           break;
 
         case "/api/reflections":
-          this.respondJson(res, 200, { success: true, reflections: [], timestamp: new Date().toISOString() });
+          this.respondJson(res, 200, {
+            success: true,
+            reflections: this.reflection ? this.reflection.getRecentReflections(7) : [],
+            timestamp: new Date().toISOString(),
+          });
           break;
 
         case "/api/config":

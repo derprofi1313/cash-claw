@@ -269,6 +269,11 @@ export class DashboardData {
       financeLimits: this.config.financeLimits,
       schedule: this.config.schedule,
       docker: this.config.docker,
+      channels: {
+        telegram: this.config.platform.telegram?.botToken ? "connected" : "disabled",
+        whatsapp: this.config.platform.whatsapp?.operatorNumber ? "connected" : "disabled",
+        docker: this.sandboxManager?.isEnabled() ? "available" : "not_installed",
+      },
     };
   }
 
