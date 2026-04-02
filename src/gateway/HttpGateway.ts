@@ -12,6 +12,7 @@ import type { SessionManager } from "./SessionManager.js";
 import type { ToolRegistry } from "../tools/ToolRegistry.js";
 import type { MonetizationSkills } from "./MonetizationSkills.js";
 import type { DailyReflection } from "./DailyReflection.js";
+import type { DashboardData } from "./DashboardData.js";
 import type { ToolCategory } from "../tools/Tool.js";
 import {
   PROTOCOL_VERSION,
@@ -136,6 +137,7 @@ export class HttpGateway {
   private authToken: string | null;
   private idempotencyCache = new Map<string, IdempotencyEntry>();
   private idempotencyCleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private dashboardData: DashboardData | null = null;
 
   constructor(
     private port: number,
@@ -149,6 +151,11 @@ export class HttpGateway {
     private stripeWebhookSecret: string | null = null,
   ) {
     this.authToken = process.env["CASHCLAW_GATEWAY_TOKEN"] ?? null;
+  }
+
+  /** Set the DashboardData aggregator for enhanced API endpoints */
+  setDashboardData(data: DashboardData): void {
+    this.dashboardData = data;
   }
 
   /** Start the HTTP + WebSocket server */
@@ -615,6 +622,52 @@ export class HttpGateway {
         case "/api/export/tasks": {
           const fmt = url.searchParams.get("format") ?? "json";
           this.handleExportTasks(res, fmt);
+          break;
+        }
+
+        case "/api/revenue":
+          if (this.dashboardData) {
+            this.dashboardData.getRevenueSummary().then(data => {
+              this.respondJson(res, 200, { success: true, data, timestamp: new Date().toISOString() });
+            }).catch(err => {
+              this.respondJson(res, 500, { success: false, error: err instanceof Error ? err.message : "Revenue fetch failed" });
+            });
+            return;
+          }
+          this.respondJson(res, 200, { success: true, data: { today: 0, thisWeek: 0, thisMonth: 0, recentPayments: [], dailyRevenue: [], categories: {} }, timestamp: new Date().toISOString() });
+          break;
+
+        case "/api/tools/stats":
+          if (this.dashboardData) {
+            this.dashboardData.getSandboxStatus().then(sandbox => {
+              this.respondJson(res, 200, { success: true, tools: this.dashboardData!.getToolStats(), sandbox, timestamp: new Date().toISOString() });
+            }).catch(() => {
+              this.respondJson(res, 200, { success: true, tools: this.dashboardData!.getToolStats(), sandbox: { available: false, enabled: false, version: "N/A" }, timestamp: new Date().toISOString() });
+            });
+            return;
+          }
+          this.respondJson(res, 200, { success: true, tools: [], sandbox: { available: false, enabled: false, version: "N/A" }, timestamp: new Date().toISOString() });
+          break;
+
+        case "/api/reflections":
+          this.respondJson(res, 200, { success: true, reflections: [], timestamp: new Date().toISOString() });
+          break;
+
+        case "/api/config":
+          if (this.dashboardData) {
+            this.respondJson(res, 200, { success: true, data: this.dashboardData.getMaskedConfig(), timestamp: new Date().toISOString() });
+          } else {
+            this.respondJson(res, 200, { success: true, data: {}, timestamp: new Date().toISOString() });
+          }
+          break;
+
+        case "/api/logs": {
+          const limit = Number(url.searchParams.get("limit") ?? "100");
+          if (this.dashboardData) {
+            this.respondJson(res, 200, { success: true, logs: this.dashboardData.getRecentLogs(limit), timestamp: new Date().toISOString() });
+          } else {
+            this.respondJson(res, 200, { success: true, logs: [], timestamp: new Date().toISOString() });
+          }
           break;
         }
 

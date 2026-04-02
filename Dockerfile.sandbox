@@ -1,0 +1,11 @@
+# Lightweight sandbox image for CashClaw tool execution
+FROM node:22-alpine
+
+# Security hardening
+RUN addgroup -S sandbox && adduser -S sandbox -G sandbox
+RUN apk add --no-cache python3 bash curl
+
+WORKDIR /workspace
+USER sandbox
+
+# No CMD – set dynamically by DockerSandbox

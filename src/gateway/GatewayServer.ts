@@ -6,6 +6,7 @@ import { DebugConsole } from "../cli/DebugConsole.js";
 import { GatewayLogger } from "./GatewayLogger.js";
 import { LLMAdapter } from "./LLMAdapter.js";
 import { TelegramAdapter } from "./TelegramAdapter.js";
+import { WhatsAppAdapter } from "./WhatsAppAdapter.js";
 import { AgentRuntime } from "./AgentRuntime.js";
 import { GogAdapter } from "./GogAdapter.js";
 import { BrowserAdapter } from "./BrowserAdapter.js";
@@ -19,6 +20,8 @@ import { DailyReflection } from "./DailyReflection.js";
 import { MonetizationSkills } from "./MonetizationSkills.js";
 import { HttpGateway } from "./HttpGateway.js";
 import { OpenClawAdapter } from "./OpenClawAdapter.js";
+import { SandboxManager } from "./SandboxManager.js";
+import { DashboardData } from "./DashboardData.js";
 
 // Tool factories
 import { FsReadTool, FsWriteTool, FsListTool, FsExistsTool, FsMkdirTool } from "../tools/fs/FsTools.js";
@@ -30,6 +33,8 @@ import { createStripeTools } from "../tools/stripe/StripeTools.js";
 import { createSubAgentTool, createLlmTool } from "../tools/agent/AgentTools.js";
 import { CronManager } from "../tools/cron/CronTools.js";
 import { createOpenClawTools } from "../tools/openclaw/OpenClawTools.js";
+import { createWhatsAppTools } from "../tools/whatsapp/WhatsAppTools.js";
+import { createSandboxTools } from "../tools/sandbox/ExecuteCodeTool.js";
 
 export interface GatewayOptions {
   port: number;
@@ -42,6 +47,7 @@ export class GatewayServer {
   private log!: GatewayLogger;
   private llm!: LLMAdapter;
   private telegram: TelegramAdapter | null = null;
+  private whatsapp: WhatsAppAdapter | null = null;
   private gog: GogAdapter | null = null;
   private browser: BrowserAdapter | null = null;
   private openclaw: OpenClawAdapter | null = null;
@@ -55,6 +61,7 @@ export class GatewayServer {
   private skills!: MonetizationSkills;
   private runtime!: AgentRuntime;
   private httpGateway!: HttpGateway;
+  private sandboxManager!: SandboxManager;
   private shutdownRequested = false;
 
   constructor(private opts: GatewayOptions) {
@@ -102,9 +109,9 @@ export class GatewayServer {
       this.log.config(`Services: ${enabledCount} aktiv`);
     }
 
-    if (config.docker?.enabled) {
-      this.log.gateway("âš ï¸ Docker-Sandboxing aktiviert, aber noch nicht erzwungen â€“ Tools laufen unsandboxed");
-    }
+    // -- 2b. Initialize Sandbox Manager --
+    this.sandboxManager = new SandboxManager(config, this.log);
+    await this.sandboxManager.init();
 
     // â”€â”€ 3. Initialize LLM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     this.log.gateway("Initialisiere LLM...");
@@ -128,7 +135,20 @@ export class GatewayServer {
     } else {
       this.log.gateway("Telegram nicht konfiguriert â€“ Ã¼bersprungen");
     }
-
+    // -- 4b. Prepare WhatsApp --
+    if (config.platform.whatsapp?.operatorNumber &&
+        (config.platform.type === "whatsapp" || config.platform.type === "both")) {
+      this.log.gateway("Initialisiere WhatsApp Adapter...");
+      this.whatsapp = new WhatsAppAdapter(
+        config,
+        this.log,
+        () => this.runtime?.getState() ?? { running: false, paused: false, actionsToday: 0, costToday: 0, currentTask: null, lastPlanTime: null, cycleCount: 0, tasksCompleted: [], startedAt: null },
+        (cmd) => this.handleTelegramCommand(cmd),
+        async (message) => this.handleTelegramMessage(message),
+      );
+    } else {
+      this.log.gateway("WhatsApp nicht konfiguriert – übersprungen");
+    }
     // â”€â”€ 5. Initialize gog (Google Workspace CLI) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (config.gog?.account) {
       this.log.gateway("Initialisiere gog CLI (Google Workspace)...");
@@ -192,11 +212,15 @@ export class GatewayServer {
 
     // Register adapter-bound tools
     this.registry.registerAll(createTelegramTools(this.telegram));
+    this.registry.registerAll(createWhatsAppTools(this.whatsapp));
     this.registry.registerAll(createGogTools(this.gog));
     this.registry.registerAll(createBrowserTools(this.browser));
     this.registry.registerAll(createLearningTools(this.learning));
     this.registry.registerAll(createStripeTools(config.stripe?.secretKey ?? null));
     this.registry.registerAll(createOpenClawTools(this.openclaw));
+
+    // Register sandbox tools
+    this.registry.registerAll(createSandboxTools(this.sandboxManager));
 
     // Register agent tools
     this.registry.register(createSubAgentTool(this.subAgents));
@@ -234,6 +258,11 @@ export class GatewayServer {
       await this.telegram.start();
     }
 
+    if (this.whatsapp) {
+      await this.whatsapp.start();
+      this.log.ok("WhatsApp Adapter gestartet");
+    }
+
     this.log.gateway("Starte Autonomous Execution Loop (AEL)...");
     await this.runtime.start();
 
@@ -253,6 +282,14 @@ export class GatewayServer {
     );
     this.httpGateway.start();
 
+    // Wire DashboardData for enhanced API endpoints
+    const dashboardData = new DashboardData(
+      this.costTracker, this.learning, this.session,
+      this.runtime, this.registry, this.reflection,
+      this.skills, this.sandboxManager, config,
+    );
+    this.httpGateway.setDashboardData(dashboardData);
+
     // Wire runtime events to WebSocket broadcast
     this.runtime.onEvent((event) => {
       const { type, ...payload } = event;
@@ -269,6 +306,7 @@ export class GatewayServer {
     const features = [
       this.gog?.enabled ? "Gog" : null,
       this.browser ? "Browser" : null,
+      this.whatsapp ? "WhatsApp" : null,
       this.openclaw ? "OpenClaw-Skills" : null,
       "Learning",
       "Sub-Agents",
@@ -342,7 +380,11 @@ export class GatewayServer {
       await this.telegram.sendToOperator("ðŸ›‘ Cash-Claw Gateway gestoppt.");
       this.telegram.stop();
     }
-
+    // Stop WhatsApp
+    if (this.whatsapp) {
+      await this.whatsapp.sendToOperator("🛑 Cash-Claw Gateway gestoppt.");
+      await this.whatsapp.stop();
+    }
     this.log.ok("Gateway sauber beendet.");
 
     // Give logs time to flush

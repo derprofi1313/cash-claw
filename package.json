@@ -19,12 +19,16 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.9.1",
+    "@whiskeysockets/baileys": "7.0.0-rc.9",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
+    "dockerode": "^4.0.10",
+    "qrcode-terminal": "^0.12.0",
     "stripe": "^17.5.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/dockerode": "^4.0.1",
     "@types/node": "^22.12.0",
     "typescript": "^5.7.3"
   },

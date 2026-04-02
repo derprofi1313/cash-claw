@@ -20,6 +20,9 @@ import {
 } from "./gateway/protocol/types.js";
 import { z } from "zod";
 import { encryptConfig, decryptConfig } from "./config/ConfigEncryption.js";
+import { SandboxManager } from "./gateway/SandboxManager.js";
+import { DashboardData } from "./gateway/DashboardData.js";
+import { getDashboardHtml } from "./gateway/dashboard.js";
 
 // ═══════════════════════════════════════════════════════════════
 //  buildTool()
@@ -588,5 +591,176 @@ describe("ConfigEncryption", () => {
     const encrypted = encryptConfig("{}", "pass");
     const parsed = JSON.parse(encrypted);
     assert.equal(parsed.magic, "CCENC1");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  Phase 8: SandboxManager – shouldSandbox routing
+// ═══════════════════════════════════════════════════════════════
+
+describe("SandboxManager.shouldSandbox", () => {
+  const mockLog = {
+    gateway: () => {}, ok: () => {}, error: () => {}, config: () => {},
+    plan: () => {}, think: () => {}, exec: () => {}, telegram: () => {},
+    stripe: () => {}, tool: () => {}, cost: () => {}, log: () => {},
+    llm: () => {}, maskKey: () => "***",
+  } as any;
+
+  const config = createDefaultConfig();
+  config.docker = { enabled: true };
+
+  it("should sandbox execute_code tool", () => {
+    const mgr = new SandboxManager(config, mockLog);
+    assert.equal(mgr.shouldSandbox("execute_code"), false); // Not enabled until init()
+  });
+
+  it("should NOT sandbox telegram.send (host-only)", () => {
+    const mgr = new SandboxManager(config, mockLog);
+    assert.equal(mgr.shouldSandbox("telegram.send"), false);
+  });
+
+  it("should NOT sandbox whatsapp.send (host-only)", () => {
+    const mgr = new SandboxManager(config, mockLog);
+    assert.equal(mgr.shouldSandbox("whatsapp.send"), false);
+  });
+
+  it("should NOT sandbox stripe.* tools (host pattern)", () => {
+    const mgr = new SandboxManager(config, mockLog);
+    assert.equal(mgr.shouldSandbox("stripe.charge"), false);
+  });
+
+  it("should NOT sandbox cron.* tools (host pattern)", () => {
+    const mgr = new SandboxManager(config, mockLog);
+    assert.equal(mgr.shouldSandbox("cron.schedule"), false);
+  });
+
+  it("should return false when disabled", () => {
+    const disabledConfig = createDefaultConfig();
+    disabledConfig.docker = { enabled: false };
+    const mgr = new SandboxManager(disabledConfig, mockLog);
+    assert.equal(mgr.shouldSandbox("execute_code"), false);
+    assert.equal(mgr.shouldSandbox("unknown.tool"), false);
+  });
+
+  it("should report disabled by default (before init)", () => {
+    const mgr = new SandboxManager(config, mockLog);
+    assert.equal(mgr.isEnabled(), false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  Phase 9: DashboardData – getMaskedConfig
+// ═══════════════════════════════════════════════════════════════
+
+describe("DashboardData.getMaskedConfig", () => {
+  const mockLog = {
+    gateway: () => {}, ok: () => {}, error: () => {}, config: () => {},
+    plan: () => {}, think: () => {}, exec: () => {}, telegram: () => {},
+    stripe: () => {}, tool: () => {}, cost: () => {}, log: () => {},
+    llm: () => {}, maskKey: () => "***",
+  } as any;
+
+  it("should mask API keys in config", () => {
+    const config = createDefaultConfig();
+    config.llm.apiKey = "sk-ant-secret-key-12345";
+    config.stripe = { secretKey: "sk_live_secret", webhookSecret: "whsec_secret", minPayout: 50 };
+    config.platform.telegram = { botToken: "12345:ABCsecret", operatorChatId: "999" };
+
+    const dashData = new DashboardData(
+      { getSessionSummary: () => ({}), getTodayCost: () => 0, getRemainingBudget: () => 5, getModelBreakdown: () => ({}), getToolBreakdown: () => ({}) } as any,
+      { getAllLearnings: () => "", getAllErrors: () => "", getStats: () => ({ learnings: 0, errors: 0, features: 0 }) } as any,
+      { getSessionId: () => "s1", getStatus: () => "active", getMessages: () => [] } as any,
+      { getState: () => ({ running: true, paused: false, actionsToday: 0, costToday: 0, currentTask: null, cycleCount: 0, tasksCompleted: [] }) } as any,
+      { getAll: () => [], getByCategory: () => [] } as any,
+      null, null, null, config,
+    );
+
+    const masked = dashData.getMaskedConfig();
+    assert.equal((masked as any).llm.apiKey, "***");
+    assert.equal((masked as any).stripe.secretKey, "***");
+    assert.equal((masked as any).platform.telegram.botToken, "***");
+    assert.equal((masked as any).platform.telegram.operatorChatId, "999");
+  });
+
+  it("should include non-secret config values", () => {
+    const config = createDefaultConfig();
+    config.llm.provider = "anthropic";
+    config.llm.model = "claude-opus-4-6";
+
+    const dashData = new DashboardData(
+      { getSessionSummary: () => ({}), getTodayCost: () => 0, getRemainingBudget: () => 5, getModelBreakdown: () => ({}), getToolBreakdown: () => ({}) } as any,
+      { getAllLearnings: () => "", getAllErrors: () => "", getStats: () => ({ learnings: 0, errors: 0, features: 0 }) } as any,
+      { getSessionId: () => "s1", getStatus: () => "active", getMessages: () => [] } as any,
+      { getState: () => ({ running: true, paused: false, actionsToday: 0, costToday: 0, currentTask: null, cycleCount: 0, tasksCompleted: [] }) } as any,
+      { getAll: () => [], getByCategory: () => [] } as any,
+      null, null, null, config,
+    );
+
+    const masked = dashData.getMaskedConfig();
+    assert.equal((masked as any).llm.provider, "anthropic");
+    assert.equal((masked as any).llm.model, "claude-opus-4-6");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  Phase 9: DashboardData – Revenue (no Stripe)
+// ═══════════════════════════════════════════════════════════════
+
+describe("DashboardData.getRevenueSummary", () => {
+  it("should return zeros when Stripe not configured", async () => {
+    const config = createDefaultConfig();
+    // No stripe config
+
+    const dashData = new DashboardData(
+      { getSessionSummary: () => ({}), getTodayCost: () => 0, getRemainingBudget: () => 5, getModelBreakdown: () => ({}), getToolBreakdown: () => ({}) } as any,
+      { getAllLearnings: () => "", getAllErrors: () => "", getStats: () => ({ learnings: 0, errors: 0, features: 0 }) } as any,
+      { getSessionId: () => "s1", getStatus: () => "active", getMessages: () => [] } as any,
+      { getState: () => ({ running: true, paused: false, actionsToday: 0, costToday: 0, currentTask: null, cycleCount: 0, tasksCompleted: [] }) } as any,
+      { getAll: () => [], getByCategory: () => [] } as any,
+      null, null, null, config,
+    );
+
+    const revenue = await dashData.getRevenueSummary();
+    assert.equal(revenue.today, 0);
+    assert.equal(revenue.thisWeek, 0);
+    assert.equal(revenue.thisMonth, 0);
+    assert.deepEqual(revenue.recentPayments, []);
+    assert.deepEqual(revenue.dailyRevenue, []);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  Phase 9: Dashboard HTML
+// ═══════════════════════════════════════════════════════════════
+
+describe("getDashboardHtml", () => {
+  it("should return valid HTML with port and tabs", () => {
+    const html = getDashboardHtml(18789, null);
+    assert.ok(html.includes("<!DOCTYPE html>"));
+    assert.ok(html.includes("CashClaw"));
+    assert.ok(html.includes("18789"));
+    assert.ok(html.includes("overview"));
+    assert.ok(html.includes("revenue"));
+    assert.ok(html.includes("tools"));
+    assert.ok(html.includes("plans"));
+    assert.ok(html.includes("settings"));
+  });
+
+  it("should include auth token when provided", () => {
+    const html = getDashboardHtml(18789, "test-token-123");
+    assert.ok(html.includes("test-token-123"));
+  });
+
+  it("should include Alpine.js, Tailwind, Chart.js", () => {
+    const html = getDashboardHtml(18789, null);
+    assert.ok(html.includes("alpinejs"));
+    assert.ok(html.includes("tailwindcss"));
+    assert.ok(html.includes("chart.js"));
+  });
+
+  it("should include WebSocket connection code", () => {
+    const html = getDashboardHtml(18789, null);
+    assert.ok(html.includes("new WebSocket"));
+    assert.ok(html.includes("/ws"));
   });
 });

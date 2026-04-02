@@ -39,9 +39,10 @@ export interface CashClawConfig {
       botToken: string;
       operatorChatId: string;
     };
-    /** @planned WhatsApp adapter not yet implemented */
     whatsapp?: {
       operatorNumber: string;
+      sessionPath?: string;
+      reconnectAttempts?: number;
     };
   };
 
@@ -82,9 +83,14 @@ export interface CashClawConfig {
   };
 
   // Docker sandboxing
-  /** @planned Runtime enforcement not yet implemented – flag is stored only */
   docker: {
     enabled: boolean;
+    image?: string;
+    memoryMB?: number;
+    cpuPercent?: number;
+    timeoutSeconds?: number;
+    allowNetwork?: boolean;
+    workspacePath?: string;
   };
 
   /** @planned Hyrve AI Marketplace integration */

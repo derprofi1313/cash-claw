@@ -19,7 +19,8 @@ Cash-Claw extends OpenClaw with an **Autonomous Execution Loop (AEL)** — a sel
 - **npm** or **pnpm**
 - API key for at least one LLM provider (Anthropic, OpenAI, Google, or Ollama)
 - Stripe account for payment processing
-- Telegram Bot Token (for operator control)
+- Telegram Bot Token and/or WhatsApp number (for operator control)
+- Docker (optional, for sandboxed tool execution)
 
 ### Installation
 
@@ -47,7 +48,7 @@ The wizard guides you through 8 steps:
 | Step | What's configured |
 |------|-------------------|
 | 1/8 | LLM provider + API key (validated live) |
-| 2/8 | Chat platform: Telegram |
+| 2/8 | Chat platform: Telegram, WhatsApp, or both |
 | 3/8 | Stripe Secret Key + Webhook Secret |
 | 4/8 | Monetization categories |
 | 5/8 | Financial safety limits (if Finance enabled) |
@@ -84,6 +85,18 @@ cashclaw --help           # Show help
 | `/stop` | Shutdown gateway |
 | `/help` | Command list |
 
+The same commands work on **WhatsApp** when configured.
+
+### Web Dashboard
+
+Cash-Claw includes a full web dashboard at `http://127.0.0.1:18789/` with:
+
+- **Overview** — Live activity feed, AEL cycle status, quick controls, chat with agent
+- **Revenue** — Stripe revenue charts (daily/weekly/monthly), recent payments
+- **Tools & Execution** — Tool performance stats, Docker sandbox status
+- **Plans & Reflections** — Completed tasks, daily reflections, learning log
+- **Settings & Control** — Agent controls, masked config view, channel status
+
 ---
 
 ## Architecture
@@ -97,21 +110,22 @@ cashclaw --help           # Show help
 │  │  (REST + WS)     │   │  (AEL)                │  │
 │  │  Protocol v1     │   │                       │  │
 │  │  127.0.0.1:18789 │   │  Plan → QueryLoop →   │  │
-│  │                  │   │  Review → Reflect     │  │
+│  │  + Dashboard UI  │   │  Review → Reflect     │  │
 │  └────────┬─────────┘   └──────────┬────────────┘  │
 │           │                        │               │
 │           └────────┬───────────────┘               │
 │                    │                               │
 │  ┌─────────────────▼──────────────────────────┐   │
-│  │  39 Tools · 8 Skills · Cost Tracker        │   │
+│  │  39+ Tools · 8 Skills · Cost Tracker       │   │
 │  │  ConfigBridge · Session · Learning System  │   │
+│  │  Docker Sandbox · SandboxManager           │   │
 │  └────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────┘
-         │           │           │
-    ┌────▼────┐ ┌────▼────┐ ┌───▼────┐
-    │Telegram │ │ Stripe  │ │  LLM   │
-    │  Bot    │ │ Payment │ │ Router │
-    └─────────┘ └─────────┘ └────────┘
+         │           │           │           │
+    ┌────▼────┐ ┌────▼────┐ ┌───▼────┐ ┌────▼─────┐
+    │Telegram │ │WhatsApp │ │ Stripe │ │  LLM     │
+    │  Bot    │ │(Baileys)│ │Payment │ │  Router  │
+    └─────────┘ └─────────┘ └────────┘ └──────────┘
 ```
 
 ### Autonomous Execution Loop (AEL)
@@ -159,13 +173,14 @@ Cash-Claw organizes revenue streams into 4 groups:
 | Category | Tools | Count |
 |----------|-------|-------|
 | Filesystem | read, write, list, exists, mkdir | 5 |
-| Communication | telegram.send, telegram.getMe, telegram.polling | 3 |
+| Communication | telegram.send, telegram.getMe, telegram.polling, whatsapp.send | 4 |
 | Google Workspace | gmail, calendar, sheets, drive, contacts, docs | 12 |
 | Browser | open, interact, snapshot, search, parseDOM | 6 |
 | Learning | log, list, summarize, tag, export | 5 |
 | Stripe | createPaymentLink, listCustomers, webhookHandler | 3 |
 | Scheduling | schedule, list, cancel | 3 |
 | Agents | subagent.spawn, llm.send | 2 |
+| Sandbox | execute_code (JS/Python/Bash in Docker) | 1 |
 
 ---
 
@@ -190,6 +205,7 @@ Automatic fallback: if the primary model fails, Cash-Claw switches to a cheaper 
 - **Schema validation** — all tool inputs and protocol frames validated with Zod
 - **Path hardening** — filesystem tools guard against symlink escapes
 - **Budget enforcement** — daily and per-query cost limits prevent runaway spending
+- **Docker sandbox** — untrusted tools run in isolated Docker containers (ReadonlyRootfs, no network, CapDrop ALL, memory/CPU limits)
 - **Onboarding gate** — agent waits for sufficient operator briefing before autonomous work
 
 See [SECURITY.md](SECURITY.md) for the full security policy.
@@ -203,7 +219,7 @@ npm install          # Install dependencies
 npm run build        # Compile TypeScript
 npm run dev          # Watch mode (auto-rebuild)
 npm run typecheck    # Type-check only
-npm test             # Build + run 40 tests
+npm test             # Build + run 58 tests
 npm run clean        # Remove dist/
 ```
 
@@ -220,8 +236,13 @@ cash-claw/
 │   │   ├── QueryLoop.ts     # Multi-turn LLM ↔ Tool loop
 │   │   ├── HttpGateway.ts   # REST + WebSocket server
 │   │   ├── LLMAdapter.ts    # LLM routing (4 providers)
+│   │   ├── WhatsAppAdapter.ts  # WhatsApp via Baileys
+│   │   ├── DockerSandbox.ts    # Docker container execution
+│   │   ├── SandboxManager.ts   # Sandbox routing logic
+│   │   ├── DashboardData.ts    # Dashboard data aggregation
+│   │   ├── dashboard.ts        # Web dashboard UI (single-file HTML)
 │   │   └── ...              # Telegram, Cost, Session, Learning, Skills
-│   └── tools/               # 39 tools in 9 categories
+│   └── tools/               # 39+ tools in 9 categories
 ├── bootstrap/               # Agent identity files
 ├── .github/workflows/       # CI/CD (build, test, release)
 ├── package.json
@@ -239,9 +260,9 @@ cash-claw/
 - [x] **Phase 4**: Daily self-reflection
 - [x] **Phase 5**: Monetization skills (Email, Content, Leads, etc.)
 - [x] **Phase 6**: Testing & Hardening
-- [ ] **Phase 7**: WhatsApp adapter
-- [ ] **Phase 8**: Docker sandbox enforcement
-- [ ] **Phase 9**: Web dashboard UI
+- [x] **Phase 7**: WhatsApp adapter (Baileys)
+- [x] **Phase 8**: Docker sandbox enforcement
+- [x] **Phase 9**: Web dashboard UI
 
 ---
 
